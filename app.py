@@ -1,13 +1,13 @@
 import time
 import io
+from datetime import datetime
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 from src.predict import load_artifacts, predict_sentiment
 
-# Konfigurasi Halaman & Tema
 st.set_page_config(
-    page_title="IMDb Sentiment Analyzer - v2.0",
+    page_title="IMDb Sentiment Analyzer - v3.0",
     page_icon="🎬",
     layout="wide"
 )
@@ -47,31 +47,54 @@ st.markdown("""
         text-transform: uppercase;
     }
     .metric-value {
-        font-size: 1.4rem;
+        font-size: 1.3rem;
         font-weight: 700;
         color: #eab308;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# Inisialisasi Model & Vocab
+# Inisialisasi Session History Log
+if "history_log" not in st.session_state:
+    st.session_state.history_log = []
+
+# Sidebar: Pemilihan Model & Konfigurasi
+st.sidebar.header("⚙️ Konfigurasi Model")
+selected_model_type = st.sidebar.selectbox(
+    "Pilih Arsitektur Recurrent:",
+    options=["LSTM", "GRU"],
+    help="Bandingkan performa konvergensi LSTM vs efisiensi inferensi GRU."
+)
+
 @st.cache_resource
-def init_model():
-    model, vocab, device = load_artifacts()
-    return model, vocab, device
+def get_cached_model(m_type):
+    return load_artifacts(model_type=m_type)
 
 try:
-    model, vocab, device = init_model()
+    model, vocab, device = get_cached_model(selected_model_type)
     is_ready = True
 except Exception as e:
-    st.error(f"Gagal memuat model: {e}")
+    st.sidebar.error(f"Gagal memuat model {selected_model_type}: {e}")
     is_ready = False
 
-st.title("🎬 IMDb Movie Review Sentiment Analyzer (v2.0)")
-st.caption("Aplikasi Analisis Sentimen Ulasan Film berbasis PyTorch LSTM (Config B: 2-Layer Recurrent + Masked Mean Pooling)")
+st.sidebar.markdown("---")
+st.sidebar.markdown(f"""
+**Detail Arsitektur Aktif:**
+- **Model Type:** {selected_model_type} (Config B)
+- **Sequence Length:** 400
+- **Pooling:** Masked Mean Pooling
+- **Device:** `{str(device).upper()}`
+""")
 
-# 3. Sistem Navigasi Tabs
-tab1, tab2 = st.tabs([" Single Review", " Batch Processing (CSV)"])
+if st.sidebar.button("Hapus Riwayat Sesi"):
+    st.session_state.history_log = []
+    st.rerun()
+
+# Header Utama
+st.title("IMDb Sentiment Analyzer v3.0")
+st.caption(f"Multi-Model Text Classification & Live Benchmarking Dashboard | Model Aktif: **{selected_model_type}**")
+
+tab1, tab2, tab3 = st.tabs(["Single Review", "Batch Processing (CSV)", "Session History Log"])
 
 # TAB 1: Single Review
 with tab1:
@@ -97,48 +120,54 @@ with tab1:
 
                     st.subheader("Hasil Analisis")
                     if sentiment == "Positive":
-                        st.success(f"### Sentimen: **{sentiment.upper()}** 🌟")
+                        st.success(f"### Sentimen: **{sentiment.upper()}** ")
                     else:
-                        st.error(f"### Sentimen: **{sentiment.upper()}** 👎")
+                        st.error(f"### Sentimen: **{sentiment.upper()}** ")
 
-                    st.markdown(f"**Confidence:** `{confidence:.2f}%`")
+                    st.markdown(f"**Confidence Score:** `{confidence:.2f}%`")
                     st.progress(confidence / 100.0)
 
                     st.markdown(f"""
                     <div class="metric-container">
                         <div class="metric-box">
-                            <div class="metric-title">Latency</div>
+                            <div class="metric-title">Inference Latency</div>
                             <div class="metric-value">{latency_ms:.2f} ms</div>
                         </div>
                         <div class="metric-box">
-                            <div class="metric-title">Device</div>
-                            <div class="metric-value">{str(device).upper()}</div>
+                            <div class="metric-title">Active Model</div>
+                            <div class="metric-value">{selected_model_type}</div>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
+                    
+                    # Simpan ke Riwayat Log Sesi
+                    st.session_state.history_log.append({
+                        "Timestamp": datetime.now().strftime("%H:%M:%S"),
+                        "Model": selected_model_type,
+                        "Input Text": user_review[:80] + ("..." if len(user_review) > 80 else ""),
+                        "Sentiment": sentiment,
+                        "Confidence (%)": round(confidence, 2),
+                        "Latency (ms)": round(latency_ms, 2)
+                    })
 
-# Batch Processing CSV
+# TAB 2: Batch CSV
 with tab2:
     st.subheader("Unggah File CSV")
-    st.write("Unggah file `.csv` yang berisi kumpulan teks ulasan film.")
-    
-    uploaded_file = st.file_uploader("Pilih file CSV", type=["csv"])
+    uploaded_file = st.file_uploader("Pilih file CSV", type=["csv"], key="batch_uploader")
     
     if uploaded_file is not None and is_ready:
         df = pd.read_csv(uploaded_file)
         st.write(f"Pratinjau Data ({len(df)} baris):")
         st.dataframe(df.head(5), use_container_width=True)
         
-        # Deteksi otomatis atau pilih manual kolom teks
         text_col = st.selectbox("Pilih kolom ulasan film:", options=df.columns)
         
         if st.button("Jalankan Prediksi Batch", use_container_width=True):
-            with st.spinner(f"Menganalisis {len(df)} baris ulasan..."):
+            with st.spinner(f"Menganalisis {len(df)} baris teks dengan {selected_model_type}..."):
                 start_batch = time.time()
                 
                 sentiments = []
                 confidences = []
-                
                 prog_bar = st.progress(0)
                 total_rows = len(df)
                 
@@ -151,14 +180,13 @@ with tab2:
                     
                 total_batch_time = time.time() - start_batch
                 
+                df["Model_Used"] = selected_model_type
                 df["Predicted_Sentiment"] = sentiments
                 df["Confidence_Score(%)"] = [round(c, 2) for c in confidences]
                 
-                st.success(f"Selesai menganalisis {total_rows} ulasan dalam {total_batch_time:.2f} detik! ({total_batch_time/total_rows*1000:.2f} ms/ulasan)")
+                st.success(f"Selesai! {total_rows} ulasan diproses dalam {total_batch_time:.2f} detik ({total_batch_time/total_rows*1000:.2f} ms/ulasan).")
                 
-                # Visualisasi & Tabel Hasil
                 col_chart, col_data = st.columns([1, 1.3])
-                
                 with col_chart:
                     st.subheader("Distribusi Sentimen")
                     counts = df["Predicted_Sentiment"].value_counts().reset_index()
@@ -176,15 +204,33 @@ with tab2:
                     
                 with col_data:
                     st.subheader("Tabel Hasil Prediksi")
-                    st.dataframe(df[[text_col, "Predicted_Sentiment", "Confidence_Score(%)"]].head(10), use_container_width=True)
+                    st.dataframe(df[[text_col, "Model_Used", "Predicted_Sentiment", "Confidence_Score(%)"]].head(10), use_container_width=True)
                     
-                    # Unduh Hasil
                     csv_buffer = io.StringIO()
                     df.to_csv(csv_buffer, index=False)
                     st.download_button(
-                        label="Unduh Hasil Lengkap (.csv)",
+                        label="📥 Unduh Hasil Batch (.csv)",
                         data=csv_buffer.getvalue(),
-                        file_name="imdb_sentiment_predictions.csv",
+                        file_name=f"imdb_sentiment_{selected_model_type.lower()}.csv",
                         mime="text/csv",
                         use_container_width=True
                     )
+
+# TAB 3: Session History Log
+with tab3:
+    st.subheader("Riwayat Prediksi Sesi Ini")
+    if len(st.session_state.history_log) == 0:
+        st.info("Belum ada riwayat inferensi pada sesi ini. Lakukan prediksi di Tab 1 untuk mencatat log.")
+    else:
+        history_df = pd.DataFrame(st.session_state.history_log)
+        st.dataframe(history_df, use_container_width=True)
+        
+        # Download Riwayat Log
+        hist_buffer = io.StringIO()
+        history_df.to_csv(hist_buffer, index=False)
+        st.download_button(
+            label="Unduh Riwayat Sesi (.csv)",
+            data=hist_buffer.getvalue(),
+            file_name="session_inference_log.csv",
+            mime="text/csv"
+        )
