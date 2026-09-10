@@ -19,5 +19,5 @@ Dokumentasi iterasi rilis fitur aplikasi sesuai prinsip MLOps:
 
 1. **Clone repositori:**
    ```bash
-   git clone <URL_REPO_ANDA>
+   git clone https://github.com/BayuAlif/IMDb_sentiment_analyzer_MBC
    cd imdb-sentiment-app
