@@ -11,6 +11,7 @@ Dokumentasi iterasi rilis fitur aplikasi sesuai prinsip MLOps:
 | Versi | Fitur yang Diimplementasikan | Detail Teknis & UI | Dokumentasi Tampilan |
 | :---: | :--- | :--- | :---: |
 | **v1.0** | • Inferensi teks tunggal (Single Review).<br>• Input `st.text_area` standar.<br>• Output prediksi sentimen & confidence bar. | Model LSTM 2-Layer + Masked Mean Pooling, benchmark inference latency (ms), dan caching model. | ![Versi 1](docs/v1_baseline.png) |
+| **v2.0** | • Batch processing CSV upload.<br>• Donut Chart visualisasi distribusi kelas.<br>• Ekspor/unduh laporan hasil prediksi (.csv). | Integrasi Plotly Express, progress bar inferensi massal, dan latency per review. | ![Versi 2](docs/v2_enhanced.png) |
 
 
 ---
